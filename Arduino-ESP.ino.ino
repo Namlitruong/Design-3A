@@ -13,47 +13,72 @@
 #include <WiFiEspUdp.h>
 #include <PubSubClient.h>
 #include <SoftwareSerial.h>
+#include <SPI.h>
+#include <MFRC522.h>
 
+//###################################################################
+//WIFI configuration
 SoftwareSerial esp(6, 7); // RX, TX
 
-char ssid[] = "HungTQ";            // your network SSID (name)
-char pass[] = "9903098nam";        // your network password
+char ssid[] = "NAMLI";            // your network SSID (name)
+char pass[] = "9903098610";        // your network password
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
 
-char mqttServer[] = "broker.hivemq.com";
-char mqttUserName[] = "nam610";
-char mqttPass[] = "XRD6J7QS8IO5UK9W";
-char writeAPIkey[] = "N4O02PEQUVQ7G46Z";
-long channelID = 482288;
+//char mqttServer[] = "mqtt.thingspeak.com";
+char mqttServer[] = "192.168.137.210";
+char Topic1[] = "Topic1";
 
 WiFiEspClient espClient;
 PubSubClient client(espClient);
 
+//######################################################################
+//RFID Configuration
+#define SS_PIN 10
+#define RST_PIN 9
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);       
+unsigned long UID, UIDtemp;
+
 void setup()
 {
-  // initialize serial for debugging
+  //###################
+  //General 
   Serial.begin(9600);
+  SPI.begin(); 
+  //####################
+  //ESP
   ConnectToWiFi ();
   client.setServer (mqttServer, 1883);
   client.setCallback (callback);
+  //####################
+  //RFID
+  mfrc522.PCD_Init();
+  RobotInfor();
 }
 
-void loop()
-{
-  // print the network connection information every 10 seconds
-  Serial.println();
-  WifiInfor();
-  //delay(10000);
+void loop(){
   if (!client.connected()) {
     reconnect();
   }
+  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
+  if ( ! mfrc522.PICC_ReadCardSerial()) {
+    return;
+  }
+  // print the network connection information every 10 seconds
+  Serial.println();
+  RobotInfor();
   client.loop();
+  RFIDCard();
   mqttPublish();
+  return;
 }
 
-void WifiInfor(){
+void RobotInfor(){
   
   // print the SSID of the network you're attached to
+  Serial.println ("Robot1");
   Serial.print("SSID: ");
   Serial.println(WiFi.SSID());
 
@@ -132,23 +157,26 @@ void reconnect() {
 
 void mqttPublish (){
   Serial.println ("Collecting data");
-
-  int InputData = 10;
-  int InputData2 = 20;
-
-  String Data = String ("field1=" + String(InputData) + "&field2=" + String(InputData2));
+  // Data
+  String Data = String ("   Robot1   UID = " + String(UID));
   int length = Data.length();
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
   Serial.println (Buff);
+  //Publish packet
+  client.publish( "UID", Buff );
 
-  String topicString ="channels/" + String( channelID ) + "/publish/"+String(writeAPIkey);
-  length = topicString.length();
-  char topicBuff[length];
-  topicString.toCharArray(topicBuff,length+1);
- 
-  client.publish( topicBuff, Buff );
-
-  delay(1000);
+  //delay(1000);
+  return;
 }
 
+void RFIDCard (){
+  UID = 0;
+  Serial.print("Card UID: ");
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    UIDtemp = mfrc522.uid.uidByte[i];
+    UID = UID*256+UIDtemp;
+  } 
+  mfrc522.PICC_HaltA(); 
+  return;
+}
