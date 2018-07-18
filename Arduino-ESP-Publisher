@@ -1,12 +1,3 @@
-/*
- WiFiEsp example: ConnectWPA
- 
- This example connects to an encrypted WiFi network using an ESP8266 module.
- Then it prints the  MAC address of the WiFi shield, the IP address obtained
- and other network details.
-
- For more details see: http://yaab-arduino.blogspot.com/p/wifiesp-example-connect.html
-*/
 #include <WiFiEsp.h>
 #include <WiFiEspClient.h>
 #include <WiFiEspServer.h>
@@ -24,19 +15,18 @@ char pass[] = "9903098610";        // your network password
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
 
 //char mqttServer[] = "mqtt.thingspeak.com";
-char mqttServer[] = "192.168.137.94";
-char ClientID[] = "Robot3";
+char mqttServer[] = "192.168.137.23";
+char ClientID[] = "Robot2";
 
 WiFiEspClient espClient;
 PubSubClient client(espClient);
 
 //######################################################################
 //RFID Configuration
-#define SS_PIN 10
-#define RST_PIN 9
-
-MFRC522 mfrc522(SS_PIN, RST_PIN);       
+MFRC522 mfrc522(10, 9);       
 unsigned long UID, UIDtemp;
+unsigned long start, finish = 0, elapse;
+float v=0;
 
 void setup()
 {
@@ -71,8 +61,8 @@ void loop(){
   Serial.println();
   RobotInfor();
   
-  //RFIDCard();
-  //mqttPublish();
+  RFIDCard();
+  mqttPublish();
   return;
 }
 
@@ -143,8 +133,7 @@ void reconnect() {
     // Attempt to connect, just a name to identify the client
     if (client.connect(ClientID)) {
       Serial.println("connected");
-      client.subscribe ("UID1", 0);
-      client.subscribe ("UID2", 0);
+      client.subscribe ("Robot1", 0);
       // Once connected, publish an announcement...
     } else {
       Serial.print("failed, rc=");
@@ -159,13 +148,14 @@ void reconnect() {
 void mqttPublish (){
   Serial.println ("Collecting data");
   // Data
-  String Data = String ("   Robot2   UID2 = " + String(UID));
+  String Data = String(UID)+';'+String(v);
+  Serial.println (Data);
   int length = Data.length();
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
   Serial.println (Buff);
   //Publish packet
-  client.publish( "UID2", Buff );
+  client.publish( ClientID, Buff );
 
   //delay(1000);
   return;
@@ -173,11 +163,15 @@ void mqttPublish (){
 
 void RFIDCard (){
   UID = 0;
-  Serial.print("Card UID: ");
   for (byte i = 0; i < mfrc522.uid.size; i++) {
     UIDtemp = mfrc522.uid.uidByte[i];
     UID = UID*256+UIDtemp;
   } 
+  start = millis();
+  if (finish != 0){
+    v = (1000.00) / (start > finish? 1 + start + ~finish : finish-start);  //speed in meters/hour
+  }
+  finish = start;
   mfrc522.PICC_HaltA(); 
   return;
 }
