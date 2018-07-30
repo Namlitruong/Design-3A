@@ -1,0 +1,236 @@
+#include <WiFiEsp.h>
+#include <WiFiEspClient.h>
+#include <WiFiEspServer.h>
+#include <PubSubClient.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+//###################################################################
+//WIFI configuration
+SoftwareSerial esp(6,7); // RX, TX
+
+char ssid[] = "Namli";            // your network SSID (name)
+char pass[] = "9903098610";        // your network password
+int status = WL_IDLE_STATUS;     // the Wifi radio's status
+
+//char mqttServer[] = "mqtt.thingspeak.com";
+char mqttServer[] = "192.168.137.23";
+char ClientID[] = "Robot1";
+String arrivedData;
+
+WiFiEspClient espClient;
+PubSubClient client(espClient);
+
+//######################################################################
+//RFID Configuration
+MFRC522 mfrc522(10, 9);       
+unsigned long UID, UIDtemp;
+unsigned long start, finish = 0, elapse;
+float v=0;
+
+//######################################################################
+//Delay
+unsigned long count;
+
+void delay_ms (uint16_t millisecond) {
+  unsigned long sec;
+  sec = ((16000000/12)/1000)*millisecond;
+  for (count = 0; count < sec; count ++);
+}
+//######################################################################
+//=====MOTOR FUNCTIONS=====
+void setPWM_leftmotor (uint8_t PWM6){
+  OCR0A = PWM6;
+}
+
+void setPWM_rightmotor (uint8_t PWM5){
+  OCR0B = PWM5;
+}
+ 
+void Forward (){
+PORTB = 0b00001010;
+}
+
+void Backward (){
+ PORTB = 0b00000101;
+}
+
+void Stop (){
+  PORTB = 0b00000000;
+  setPWM_leftmotor(0);
+  setPWM_rightmotor(0);
+}
+
+void TurnLeft (){
+PORTB = 0b00000110;
+}
+
+void TurnRight (){
+ PORTB = 0b00001001;
+}
+//###############################################################
+//=====Control motor=====
+void MotorControl (){
+  if (arrivedData == "F"){
+      Forward();
+      Serial.println ("Straight");
+      delay_ms (1000);
+  }else if (arrivedData == "R"){
+      TurnRight();
+      Serial.println ("Right");
+      delay_ms (1000);
+  }else if (arrivedData == "L"){
+      TurnLeft();
+      Serial.println ("Left");
+      delay_ms (1000);
+  }else if (arrivedData == "B"){
+      Backward();
+      Serial.println ("Backward");
+      delay_ms (1000);
+  }else{
+    Stop();
+  }
+}
+//###############################################################
+
+void setup()
+{
+  //###################
+  //General 
+  Serial.begin(9600);
+  SPI.begin(); 
+  //####################
+  //ESP
+  ConnectToWiFi ();
+  client.setServer (mqttServer, 1883);
+  client.setCallback (callback);
+  //####################
+  //RFID
+  mfrc522.PCD_Init();
+  RobotInfor();
+  //###################
+  //Motor 
+  TCCR0A = 0b10100011;
+  TCCR0B = 0b00000001;
+  DDRB = 0b00001111;
+  
+}
+
+void loop(){
+  if (!client.connected()) {
+    reconnect();
+    client.subscribe ("Robot1", 1);
+  }
+  client.loop();
+  delay_ms(100);
+  MotorControl ();
+  
+  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
+  if ( ! mfrc522.PICC_ReadCardSerial()) {
+    return;
+  }
+  // print the network connection information every 10 seconds
+  Serial.println();
+  RobotInfor();
+  //MotorControl ();
+  RFIDCard();
+  mqttPublish();
+  return;
+}
+
+void RobotInfor(){
+  
+  // print the SSID of the network you're attached to
+  Serial.print("###ClientID: ");
+  Serial.print (ClientID);
+
+  // print your WiFi shield's IP address
+  IPAddress ip = WiFi.localIP();
+  Serial.print("---IP Address: ");
+  Serial.println(ip);
+}
+
+void ConnectToWiFi (){
+    esp.begin(9600);
+  // initialize ESP module
+  WiFi.init(&esp);
+
+  // check for the presence of the shield
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("ESP is not connected");
+    // don't continue
+    while (true);
+  }
+
+  // attempt to connect to WiFi network
+  while ( status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network
+    status = WiFi.begin(ssid, pass);
+  }
+
+  Serial.println("You're connected to the network");
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  arrivedData = "";
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    arrivedData += (char)payload[i];
+  }
+  Serial.println();
+  Serial.println("########################");
+  Serial.println(arrivedData);
+  Serial.println("########################");
+  Serial.println();
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.println ("Attempting MQTT connection...");
+    // Attempt to connect, just a name to identify the client
+    if (client.connect(ClientID)) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay_ms(5000);
+    }
+  }
+}
+
+void mqttPublish (){
+  // Data
+  String Data = String (String(UID)+';'+String(v));
+  int length = Data.length();
+  char Buff[length];
+  Data.toCharArray (Buff, length + 1);
+  //Publish packet
+  client.publish( ClientID, Buff, 1);
+  return;
+}
+
+void RFIDCard (){
+  UID = 0;
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    UIDtemp = mfrc522.uid.uidByte[i];
+    UID = UID*256+UIDtemp;
+  } 
+  start = millis();
+  if (finish != 0){
+    v = (1000.00) / (start > finish? 1 + start + ~finish : finish-start);  //speed in meters/hour
+  }
+  finish = start;
+  mfrc522.PICC_HaltA(); 
+  return;
+}
