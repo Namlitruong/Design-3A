@@ -15,8 +15,10 @@ char pass[] = "9903098610";        // your network password
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
 
 //char mqttServer[] = "mqtt.thingspeak.com";
-char mqttServer[] = "192.168.137.23";
-char ClientID[] = "Robot2";
+char mqttServer[] = "192.168.137.159";
+char ClientID[] = "Robot1";
+String arrivedData;
+bool messageArrived = 0;
 
 WiFiEspClient espClient;
 PubSubClient client(espClient);
@@ -28,69 +30,99 @@ unsigned long UID, UIDtemp;
 unsigned long start, finish = 0, elapse;
 float v=0;
 
-void setup()
-{
-  //###################
-  //General 
-  Serial.begin(9600);
-  SPI.begin(); 
-  //####################
-  //ESP
-  ConnectToWiFi ();
-  client.setServer (mqttServer, 1883);
-  client.setCallback (callback);
-  //####################
-  //RFID
-  mfrc522.PCD_Init();
-  RobotInfor();
+//######################################################################
+//Delay
+unsigned long count;
+
+void delay_ms (uint16_t millisecond) {
+  unsigned long sec;
+  sec = ((16000000/12)/1000)*millisecond;
+  for (count = 0; count < sec; count ++);
+}
+//######################################################################
+//=====MOTOR FUNCTIONS=====
+void setPWM_leftmotor (uint8_t PWM6){
+  OCR0A = PWM6;
 }
 
-void loop(){
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-  
-  if ( ! mfrc522.PICC_IsNewCardPresent()) {
-    return;
-  }
-  if ( ! mfrc522.PICC_ReadCardSerial()) {
-    return;
-  }
-  // print the network connection information every 10 seconds
-  Serial.println();
-  RobotInfor();
-  
-  RFIDCard();
-  mqttPublish();
-  return;
+void setPWM_rightmotor (uint8_t PWM5){
+  OCR0B = PWM5;
 }
+ 
+void Forward (){
+PORTB = 0b00001010;
+}
+
+void Backward (){
+ PORTB = 0b00000101;
+}
+
+void Stop (){
+  PORTB = 0b00000000;
+  setPWM_leftmotor(0);
+  setPWM_rightmotor(0);
+}
+
+void TurnLeft (){
+PORTB = 0b00000110;
+}
+
+void TurnRight (){
+ PORTB = 0b00001001;
+}
+//###############################################################
+//=====Control motor=====
+void MotorControl (){
+  if (arrivedData == "F"){
+      Forward();
+      Serial.println ("Straight");
+      delay_ms (1000);
+  }else if (arrivedData == "R"){
+      TurnRight();
+      Serial.println ("Right");
+      delay_ms (1000);
+  }else if (arrivedData == "L"){
+      TurnLeft();
+      Serial.println ("Left");
+      delay_ms (1000);
+  }else if (arrivedData == "B"){
+      Backward();
+      Serial.println ("Backward");
+      delay_ms (1000);
+  }else{
+    Stop();
+  }
+}
+//###############################################################
+//=====Control LED=====
+void turnLED (){
+  if (arrivedData == "F"){
+    Serial.println("Turn LED1 on");
+    PORTB |= (1<<PORTB1);
+    delay_ms(1000);
+    PORTB &= ~(1<<PORTB1);
+    delay_ms(1000);
+  }
+  if (arrivedData == "G"){
+    Serial.println ("Turn LED2 on");
+    PORTB |= (1<<PORTB0);
+    delay_ms(1000);
+    PORTB &= ~(1<<PORTB0);
+    delay_ms(1000);
+  }
+}
+//###############################################################
 
 void RobotInfor(){
   
   // print the SSID of the network you're attached to
-  Serial.print("ClientID: ");
-  Serial.println (ClientID);
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
+  Serial.print("###ClientID: ");
+  Serial.print (ClientID);
 
   // print your WiFi shield's IP address
   IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
+  Serial.print("---IP Address: ");
   Serial.println(ip);
-
-  // print your MAC address
-  byte mac[6];
-  WiFi.macAddress(mac);
-  char buf[20];
-  sprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
-  Serial.print("MAC address: ");
-  Serial.println(buf);
-
-  // print the received signal strength
-  long rssi = WiFi.RSSI();
-  Serial.print("Signal strength (RSSI): ");
-  Serial.println(rssi);
 }
 
 void ConnectToWiFi (){
@@ -117,13 +149,21 @@ void ConnectToWiFi (){
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
+  arrivedData = "";
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
   for (int i=0;i<length;i++) {
-    Serial.print((char)payload[i]);
+    arrivedData += (char)payload[i];
   }
   Serial.println();
+  Serial.println("########################");
+  Serial.println(arrivedData);
+  Serial.println("########################");
+  Serial.println();
+  messageArrived = 1;
+  //delay_ms(300);
+  //turnLED();
 }
 
 void reconnect() {
@@ -133,31 +173,26 @@ void reconnect() {
     // Attempt to connect, just a name to identify the client
     if (client.connect(ClientID)) {
       Serial.println("connected");
-      client.subscribe ("Robot1", 0);
       // Once connected, publish an announcement...
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
       // Wait 5 seconds before retrying
-      delay(5000);
+      delay_ms(5000);
     }
   }
 }
 
 void mqttPublish (){
-  Serial.println ("Collecting data");
+  Serial.println ("Sending data");
   // Data
   String Data = String(UID)+';'+String(v);
-  Serial.println (Data);
   int length = Data.length();
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
-  Serial.println (Buff);
   //Publish packet
   client.publish( ClientID, Buff );
-
-  //delay(1000);
   return;
 }
 
@@ -173,5 +208,52 @@ void RFIDCard (){
   }
   finish = start;
   mfrc522.PICC_HaltA(); 
+  return;
+}
+
+void setup()
+{
+  //###################
+  //General 
+  Serial.begin(9600);
+  SPI.begin(); 
+  //####################
+  //ESP
+  ConnectToWiFi ();
+  client.setServer (mqttServer, 1883);
+  client.setCallback (callback);
+  //####################
+  //RFID
+  mfrc522.PCD_Init();
+  RobotInfor();
+}
+
+void loop(){
+  if (!client.connected()) {
+    reconnect();
+    client.subscribe ("Robot1", 0);
+  }
+  client.loop();
+  delay_ms (500);
+
+   if (messageArrived == 1){
+    turnLED();
+    messageArrived = 0;
+  } else {
+    messageArrived = 0;
+  }
+  
+  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
+  if ( ! mfrc522.PICC_ReadCardSerial()) {
+    return;
+  }
+  // print the network connection information every 10 seconds
+  Serial.println();
+  RobotInfor();
+  
+  RFIDCard();
+  mqttPublish();
   return;
 }
