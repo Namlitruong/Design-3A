@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 
-Server = "192.168.137.98"
-Topic = "Robot1"
+Server = "192.168.137.98" # Serve IP
+Topic = "Robot1" 
 
 def on_connect (mqttc, obj, flags, rc):
 	print ("rc: " + str(rc))
@@ -21,7 +21,7 @@ def on_message (mqtt, obj, msg):
 	print ("DestinationY:	 " + str(DestinationY))
 	print ("BatteryLv:	 " + str(BatteryLv))
 
-	mqttc.publish ("System", Path, 0)
+	mqttc.publish ("System", Path, 0) #After process the position, the path will be send back to the Robot via "System" topic
 def on_publish (mqttc, obj, mid):
 	print ("mid: " + str(mid))
 
@@ -32,6 +32,7 @@ def on_log (mqttc, obj, level, string):
 	print (string)
 ##################################################################
 #################--Split the Arrived Message--####################
+# In here, I still asume that Distination location is from the Arduino for testing. However, it can be assign by the UI module
 def splitTheString (inputString):
 	global UID
 	global DestinationX
@@ -41,11 +42,12 @@ def splitTheString (inputString):
 	UID = tokens[0]
 	#DestinationX = float (tokens[1])
 	#DestinationY = float (tokens[2])
-	DestinationX = float (2)
-	DestinationY = float (1.5)
+	DestinationX = float (2) # X coordinator of the destination  
+	DestinationY = float (1.5)# Y Coordinator of the destination 
 	BatteryLv = int (tokens[3])
 ##################################################################
 ################-- Path Planning--################################
+# By input the Current and Destination position, the Path can be calculated and send back to Arduino
 def PathPlanning (CurrentX, CurrentY, DestinationX, DestinationY):
 	global Path
 	Path = ""
@@ -89,9 +91,11 @@ def PathPlanning (CurrentX, CurrentY, DestinationX, DestinationY):
 #			Path = Path + "LS"
 #################################################################
 ################--UID Data Base--################################
+#Put the code of UID database in here 
 
 #################################################################
 ################--UID to Current Position--######################
+#From UID database we know the Current location and convert it into float for calculation
 def UID_to_CurPos (inputData):
 	global CurrentX
 	global CurrentY
@@ -100,14 +104,14 @@ def UID_to_CurPos (inputData):
 	CurrentY = float (tokens[1])
 #################################################################
 ###################--Main Loop--#################################
-
+# This part declare and initialize the MQTT connection
 mqttc = mqtt.Client()
 mqttc.on_message = on_message
 mqttc.on_connect = on_connect
 mqttc.on_publish = on_publish
 mqttc.on_subscribe = on_subscribe
 
-mqttc.connect(Server, 1883, 60)
-mqttc.subscribe(Topic, 0)
+mqttc.connect(Server, 1883, 60) # Establish connection 
+mqttc.subscribe(Topic, 0) # Subscribe the robot publish data 
 
 mqttc.loop_forever()
