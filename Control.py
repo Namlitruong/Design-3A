@@ -89,15 +89,7 @@ def PathPlanning (CurrentX, CurrentY, DestinationX, DestinationY):
 #			Path = Path + "LS"
 #################################################################
 ################--UID Data Base--################################
-def UIDDataBase (UID):
-	switcher = {
-		"900565168" : "0;0",
-		"2422529159": "1;1",
-		"1176890027": "0;0",
-		"1320283435": "2;2",
-		"2153395880": "3;3",	
-	}
-	return switcher.get (UID, "10;10")
+
 #################################################################
 ################--UID to Current Position--######################
 def UID_to_CurPos (inputData):
