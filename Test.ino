@@ -1,8 +1,22 @@
+#include <Arduino.h>
+#include <avr/io.h>
+#include <SPI.h>
+#include <MFRC522.h>
+#include <WiFiEsp.h>
+#include <WiFiEspClient.h>
+#include <WiFiEspServer.h>
+#include <PubSubClient.h>
+#include <SoftwareSerial.h>
+
+//######################################################################
+//RFID Configuration
+MFRC522 mfrc522(10, 9);       
+unsigned long UID, UIDtemp;
+//###################################################################
 //=====DECLARATION=====
 unsigned long count;
 uint8_t sensor[5];
 char Case;
-//uint8_t Situation = 0;
 
   // VARIABLES FOR SENSOR READING
 float activeSensor = 0; // Count active sensors
@@ -32,7 +46,17 @@ bool finish = false;
 char option[50];
 int index = 0;
 //========================
-
+//=====RFID FUNCTION=====
+void RFIDCard (){
+  UID = 0;
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    UIDtemp = mfrc522.uid.uidByte[i];
+    UID = UID*256+UIDtemp;
+  } 
+  Serial.println (UID);
+  mfrc522.PICC_HaltA(); 
+  return;
+}
 //=====DELAY FUNCTION=====
 void delay_ms (uint16_t millisecond) {
   unsigned long sec;
@@ -236,78 +260,6 @@ void RunCase (){
     }
 }
 //=================================
-void TestCodeMotor (){
-  // BASIC MOVING FUNCTION AND PWM TESTING
-  Forward ();
-  Serial.println ("Forward");
-  delay_ms (5000);
-  
-  Backward ();
-  Serial.println ("Backward");
-  delay_ms (1000);
-  
-  TurnLeft ();
-  Serial.println ("Left");
-  delay_ms (300);
-
-  Forward ();
-  Serial.println ("Forward");
-  delay_ms (5000);
-  
-  TurnRight ();
-  Serial.println ("Right");
-  delay_ms (300);
-
-  Forward ();
-  Serial.println ("Forward");
-  delay_ms (5000);
-  
-  Stop ();
-  Serial.println ("Stop");
-  delay_ms (1000);
-
-  for (int a = 0; a <= 255; a+=5){
-    setPWM_leftmotor (a);
-    Forward ();
-    Serial.print (a);
-    Serial.println ("   PWM Left");
-    delay_ms (100);
-  }
-
-  for (int a = 0; a <= 255; a+=5){
-    setPWM_rightmotor (a);
-    Backward ();
-    Serial.print (a);
-    Serial.println ("   PWM Right");
-    delay_ms (100);
-  }
-}
-//=====MAIN PROGRAM=====
-void setup() {
-  Serial.begin (9600);
-  DDRD = 0b11111000; //set pin 3 OUPUT (motor) and pin 2-4-5-6-7 INPUT (sensors)
-  DDRB = 0b11111001; //set pins 8-9-10-11-12 OUTPUT (motors)
-  DDRC = 0b00000000;
-
-  TCCR0A = 0;
-  TCCR0B = 0;
-  //reset 2 registers
-  TCCR0A |= (1 << WGM21) | (1 << WGM20); //mode fast PWM
-  TCCR0B |= (1 << CS22) | (1 << CS20);
-  //prescaler= 128
-  TCCR0A |= (1 << COM2B1); //(PD3) (pin 3) ( none-inverting)
-  TCCR0A |= (1 << COM2A1); //(PB3) (pin 11) ( none-inverting)
-  OCR0B = 255; //(PD3) (pin 3) motor left
-  OCR0A = 255; //(PB3) (pin 11) motor right
-  PORTD |= (1<<5) | (1<<6);
-}
-
-void loop() {
-    //TestCodeMotor ();
-    RunCase ();
-}
-//=================================
-
 //=====PID CONTROLLER=====
 void PID_program()
 { 
@@ -355,3 +307,39 @@ void Error(float *error) {
     activeSensor = 0; totalSensor = 0;
 }
 //=================================
+//=====MAIN PROGRAM=====
+void setup() {
+  Serial.begin (9600); 
+  SPI.begin();
+  mfrc522.PCD_Init(); 
+  DDRD |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3); //set pin 3 OUPUT (motor) and pin 2-4-5-6-7 INPUT (sensors)
+  DDRB |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3)| (1 << 0); //set pins 8-9-10-11-12 OUTPUT (motors)
+
+  TCCR0A = 0;
+  TCCR0B = 0;
+  //reset 2 registers
+  TCCR0A |= (1 << WGM21) | (1 << WGM20); //mode fast PWM
+  TCCR0B |= (1 << CS22) | (1 << CS20);
+  //prescaler= 128
+  TCCR0A |= (1 << COM2B1); //(PD3) (pin 3) ( none-inverting)
+  TCCR0A |= (1 << COM2A1); //(PB3) (pin 11) ( none-inverting)
+  OCR0B = 255; //(PD3) (pin 3) motor left
+  OCR0A = 255; //(PB3) (pin 11) motor right
+  PORTD |= (1<<5) | (1<<6);
+}
+
+void loop() {
+    RunCase ();
+  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
+  if ( ! mfrc522.PICC_ReadCardSerial()) {
+    return;
+  }
+  Serial.println ("#################################");
+  RFIDCard();
+  Stop();
+  delay_ms (1000);
+  Serial.println ("#################################");
+  return;
+}
