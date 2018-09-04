@@ -8,6 +8,23 @@
 #include <PubSubClient.h>
 #include <SoftwareSerial.h>
 
+//###################################################################
+//WIFI configuration
+SoftwareSerial esp(A5 ,2); // RX, TX
+
+char ssid[] = "Namli";            // your network SSID (name)
+char pass[] = "9903098610";        // your network password
+int status = WL_IDLE_STATUS;     // the Wifi radio's status
+
+//char mqttServer[] = "mqtt.thingspeak.com";
+char mqttServer[] = "192.168.137.98";
+char ClientID[] = "Robot1";
+String arrivedData;
+bool messageArrived = 0;
+
+WiFiEspClient espClient;
+PubSubClient client(espClient);
+
 //######################################################################
 //RFID Configuration
 MFRC522 mfrc522(10, 9);       
@@ -45,6 +62,93 @@ int flag;
 bool finish = false;
 char option[50];
 int index = 0;
+//###############################################################
+//=====WiFi Functions=====
+
+void RobotInfor(){
+  
+  // print the SSID of the network you're attached to
+  Serial.print("###ClientID: ");
+  Serial.print (ClientID);
+
+  // print your WiFi shield's IP address
+  IPAddress ip = WiFi.localIP();
+  Serial.print("---IP Address: ");
+  Serial.println(ip);
+}
+
+void ConnectToWiFi (){
+    esp.begin(9600);
+  // initialize ESP module
+  WiFi.init(&esp);
+
+  // check for the presence of the shield
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("ESP is not connected");
+    // don't continue
+    while (true);
+  }
+
+  // attempt to connect to WiFi network
+  while ( status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network
+    status = WiFi.begin(ssid, pass);
+  }
+
+  Serial.println("You're connected to the network");
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  arrivedData = "";
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    arrivedData += (char)payload[i];
+  }
+  Serial.println();
+  Serial.println("########################");
+  Serial.println(arrivedData);
+  Serial.println("########################");
+  Serial.println();
+  messageArrived = 1;
+  //delay_ms(300);
+  //turnLED();
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.println ("Attempting MQTT connection...");
+    // Attempt to connect, just a name to identify the client
+    if (client.connect(ClientID)) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay_ms(5000);
+    }
+  }
+}
+
+void mqttPublish (){
+  Serial.println ("Sending data");
+  // Data
+  //String Data = String(UID)+';'+String(v);
+  String Data = String(UID) + ";6;6;85"; 
+  int length = Data.length();
+  char Buff[length];
+  Data.toCharArray (Buff, length + 1);
+  //Publish packet
+  client.publish( ClientID, Buff );
+  return;
+}
+//###############################################################
 //========================
 //=====RFID FUNCTION=====
 void RFIDCard (){
@@ -309,9 +413,20 @@ void Error(float *error) {
 //=================================
 //=====MAIN PROGRAM=====
 void setup() {
-  Serial.begin (9600); 
-  SPI.begin();
-  mfrc522.PCD_Init(); 
+  //###################
+  //General 
+  Serial.begin(9600);
+  SPI.begin(); 
+  //####################
+  //ESP
+  ConnectToWiFi ();
+  client.setServer (mqttServer, 1883);
+  client.setCallback (callback);
+  //####################
+  //RFID
+  mfrc522.PCD_Init();
+  RobotInfor();
+  //###################
   DDRD |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3); //set pin 3 OUPUT (motor) and pin 2-4-5-6-7 INPUT (sensors)
   DDRB |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3)| (1 << 0); //set pins 8-9-10-11-12 OUTPUT (motors)
 
@@ -329,7 +444,11 @@ void setup() {
 }
 
 void loop() {
-    RunCase ();
+  RunCase ();
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
   if ( ! mfrc522.PICC_IsNewCardPresent()) {
     return;
   }
@@ -338,8 +457,8 @@ void loop() {
   }
   Serial.println ("#################################");
   RFIDCard();
-  Stop();
-  delay_ms (1000);
+  RobotInfor();
+  mqttPublish();
   Serial.println ("#################################");
   return;
 }
