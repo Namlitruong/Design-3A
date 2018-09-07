@@ -31,9 +31,10 @@ MFRC522 mfrc522(10, 9);
 unsigned long UID, UIDtemp;
 //###################################################################
 //=====DECLARATION=====
-unsigned long count;
 uint8_t sensor[5];
 char Case;
+unsigned long sec;
+int count;
 
   // VARIABLES FOR SENSOR READING
 float activeSensor = 0; // Count active sensors
@@ -41,9 +42,9 @@ float totalSensor = 0;  // Total sensor readings
 float avgSensor =3;     // Average sensor reading
 
   // VARIABLES FOR PID CONTROLLER
-float Kp = 66;
-float Ki = 0.05;
-float Kd = 2;
+float Kp = 150;
+float Ki = 0.1;
+float Kd = 5;
 float error = 0;
 float *er_pt = &error;      // error pointer
 float previousError = 0;
@@ -53,9 +54,7 @@ int i;
 float power = 0;
 
   // VARIABLES FOR ADJUSTING SPEED
-int turnSpeed =200;
-int adj = 3;
-int adjRight =2;
+int turnSpeed =180;
 int flag;
 
   // VARIABLES FOR PATH OPTIMISATION
@@ -114,8 +113,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println("########################");
   Serial.println();
   messageArrived = 1;
-  //delay_ms(300);
-  //turnLED();
 }
 
 void reconnect() {
@@ -163,9 +160,14 @@ void RFIDCard (){
 }
 //=====DELAY FUNCTION=====
 void delay_ms (uint16_t millisecond) {
-  unsigned long sec;
   sec = ((16000000/12)/1000)*millisecond;
-  for (count = 0; count < sec; count ++);
+  for (count = 0; count < sec; count = count + 1);
+}
+//=================================
+//=====Battery Reader FUNCTION=====
+float BatteryReader (){
+  float BatteryLv = (((analogRead(A0) - 736.0) / 124.0) * 100.0);
+  return BatteryLv;
 }
 
 //=====MOTOR FUNCTIONS=====
@@ -279,13 +281,15 @@ void SensorsCondition (){
     || (sensor[0]==0 && sensor[1]==0 && sensor[2]==0 && sensor[3]==0 && sensor[4]==1)   //00001
     || (sensor[0]==0 && sensor[1]==1 && sensor[2]==0 && sensor[3]==0 && sensor[4]==0)   //01000
     ||(sensor[0]==0 && sensor[1]==0 && sensor[2]==1 && sensor[3]==0 && sensor[4]==0)    //00100
-    ) {    
+    ||(sensor[0]==1 && sensor[1]==1 && sensor[2]==1 && sensor[3]==0 && sensor[4]==0)
+    || (sensor[0]==1 && sensor[1]==1 && sensor[2]==1 && sensor[3]==1 && sensor[4]==0)
+    ||(sensor[0]==0 && sensor[1]==0 && sensor[2]==1 && sensor[3]==1 && sensor[4]==1)
+    || (sensor[0]==0 && sensor[1]==1 && sensor[2]==1 && sensor[3]==1 && sensor[4]==1)) {    
       Case = 'S'; // Straight 00100
     }
   
    // FINISH
     else if(sensor[0]==1 && sensor[1]==1 && sensor[2]==1 && sensor[3]==1 && sensor[4]==1){
-      //if ( flag == 1)
       Case = 'F'; // Finish 11111
     }
     // TURN LEFT
@@ -311,57 +315,30 @@ void SensorsCondition (){
 
 //=====TURNING FUNCTIONS=====
 void turnRight(){
-  setPWM_leftmotor (turnSpeed);
-  setPWM_rightmotor (turnSpeed);
-  TurnRight();
-  delay_ms((adjRight*90)+1);
-  Stop();
-  delay_ms(20);
+  setPWM_leftmotor (120);
+    setPWM_rightmotor (200);
+    TurnRight();
+    delay_ms(50);
+  ReadSensors();
+  while (sensor[4] == 0 || sensor[3] == 0){
+    ReadSensors();
+    setPWM_leftmotor (120);
+    setPWM_rightmotor (200);
+    TurnRight();
+  }
+  Stop ();
+  delay_ms (500);
 }
 void turnLeft () {
-  setPWM_leftmotor (turnSpeed);
-  setPWM_rightmotor (turnSpeed);
-  TurnLeft();
-  delay_ms((adj*90)+15);
-  Stop();
-  delay_ms(20);
-}
-//========================
-
-//=====CONTROL ROBOT ACCORDING TO OUTPUT FROM SENSORS=====
-void RunCase (){
-   SensorsCondition ();
-   switch (Case){
-
-      // GO STRAIGHT
-      case 'S':
-      //Situation =0;
-        Forward ();
-        PID_program();
-        Serial.println ("Straight");
-        break;
- 
-      case 'R':
-        setPWM_leftmotor (turnSpeed);
-        setPWM_rightmotor (turnSpeed);
-        ReadSensors();
-        turnRight ();
-        Serial.println ("Turn Right");
-        break;
-        
-      case 'L': // Left 
-        setPWM_leftmotor (turnSpeed);
-        setPWM_rightmotor (turnSpeed);
-        ReadSensors ();
-        turnLeft ();
-        Serial.println ("TurnLeft");
-        break;
-        
-      default:
-        Stop ();
-        Serial.println ("Errors");
-        break;
-    }
+  ReadSensors();
+  while (sensor[0] == 0 || sensor[1] == 0){
+    ReadSensors();
+    setPWM_leftmotor (230);
+    setPWM_rightmotor (120);
+    TurnLeft();
+  }
+  Stop ();
+  delay_ms (500);
 }
 //=================================
 //=====PID CONTROLLER=====
@@ -380,13 +357,13 @@ void PID_program()
     
     if(power<0) // Turn left
     {
-      setPWM_rightmotor(185);
+      setPWM_rightmotor(255);
       setPWM_leftmotor(180 - abs(int(power)));
     }
     
     else // Turn right
     {
-      setPWM_rightmotor(185 - int(power));
+      setPWM_rightmotor(255 - int(power));
       setPWM_leftmotor(180);
     }
     Serial.print ("PWM Right:   ");
@@ -410,6 +387,43 @@ void Error(float *error) {
     *error = (avgSensor - 3);
     activeSensor = 0; totalSensor = 0;
 }
+//##################################################
+//=====CONTROL ROBOT ACCORDING TO OUTPUT FROM SENSORS=====
+void RunCase (){
+   SensorsCondition ();
+   switch (Case){
+      // GO STRAIGHT
+      case 'S':
+      //Situation =0;
+        Forward ();
+        PID_program();
+        Serial.println ("Straight");
+        break;
+ 
+//      case 'R':
+//        setPWM_leftmotor (turnSpeed);
+//        setPWM_rightmotor (turnSpeed);
+//        ReadSensors();
+//        turnRight ();
+//        Serial.println ("Turn Right");
+//        break;
+//        
+//      case 'L': // Left 
+//        setPWM_leftmotor (turnSpeed);
+//        setPWM_rightmotor (turnSpeed);
+//        ReadSensors ();
+//        turnLeft ();
+//        Serial.println ("TurnLeft");
+//        break;
+        
+      default:
+        Forward ();
+        PID_program();
+        Serial.println ("Errors");
+        break;
+    }
+}
+//##################################################
 //=================================
 //=====MAIN PROGRAM=====
 void setup() {
@@ -417,16 +431,16 @@ void setup() {
   //General 
   Serial.begin(9600);
   SPI.begin(); 
-  //####################
-  //ESP
-  ConnectToWiFi ();
-  client.setServer (mqttServer, 1883);
-  client.setCallback (callback);
-  //####################
-  //RFID
+//  //####################
+//  //ESP
+//  ConnectToWiFi ();
+//  client.setServer (mqttServer, 1883);
+//  client.setCallback (callback);
+//  //####################
+//  //RFID
   mfrc522.PCD_Init();
-  RobotInfor();
-  //###################
+//  RobotInfor();
+//  //###################
   DDRD |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3); //set pin 3 OUPUT (motor) and pin 2-4-5-6-7 INPUT (sensors)
   DDRB |=  (1 << 7) | (1 << 6)| (1 << 5)| (1 << 4)| (1 << 3)| (1 << 0); //set pins 8-9-10-11-12 OUTPUT (motors)
 
@@ -444,21 +458,82 @@ void setup() {
 }
 
 void loop() {
+  //TestCodeMotor ();
+  //ReadSensors();
   RunCase ();
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
+//  if (!client.connected()) {
+//    reconnect();
+//    client.subscribe ("System", 0);
+//  }
+//  client.loop();
   if ( ! mfrc522.PICC_IsNewCardPresent()) {
     return;
   }
   if ( ! mfrc522.PICC_ReadCardSerial()) {
     return;
   }
-  Serial.println ("#################################");
   RFIDCard();
-  RobotInfor();
-  mqttPublish();
-  Serial.println ("#################################");
-  return;
+  Stop();
+  delay_ms (500);
+  turnRight();
+//  Serial.println ("#################################");
+//  RFIDCard();
+//  RobotInfor();
+//  mqttPublish();
+//  Serial.println ("#################################");
+  //return;
+}
+
+void TestCodeMotor (){
+//  Forward ();
+//  PID_program();
+//  turnRight();
+//  Stop();
+//  delay_ms (5000);
+//  turnLeft();
+//  Stop();
+//  delay_ms (5000);
+ 
+//   BASIC MOVING FUNCTION AND PWM TESTING
+  Forward ();
+  Serial.println ("Forward");
+  delay_ms (5000);
+  
+  Backward ();
+  Serial.println ("Backward");
+  delay_ms (1000);
+  
+  TurnLeft ();
+  Serial.println ("Left");
+  delay_ms (300);
+
+  Forward ();
+  Serial.println ("Forward");
+  delay_ms (5000);
+  
+  TurnRight ();
+  Serial.println ("Right");
+  delay_ms (300);
+
+  Forward ();
+  Serial.println ("Forward");
+  delay_ms (5000);
+  
+  Stop ();
+  Serial.println ("Stop");
+  delay_ms (1000);
+
+  for (int a = 0; a <= 255; a+=5){
+    setPWM_leftmotor (a);
+    Forward ();
+    Serial.println ("PWM Left");
+    delay_ms (100);
+  }
+
+  for (int a = 0; a <= 255; a+=5){
+    setPWM_rightmotor (a);
+    Backward ();
+    Serial.println ("PWM Right");
+    delay_ms (100);
+  }
 }
