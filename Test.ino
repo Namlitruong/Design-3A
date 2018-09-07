@@ -137,7 +137,7 @@ void mqttPublish (){
   Serial.println ("Sending data");
   // Data
   //String Data = String(UID)+';'+String(v);
-  String Data = String(UID) + ";6;6;85"; 
+  String Data = String(UID) + String(BatteryReader()); 
   int length = Data.length();
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
@@ -316,9 +316,9 @@ void SensorsCondition (){
 //=====TURNING FUNCTIONS=====
 void turnRight(){
   setPWM_leftmotor (120);
-    setPWM_rightmotor (200);
-    TurnRight();
-    delay_ms(50);
+  setPWM_rightmotor (200);
+  TurnRight();
+  delay_ms(50);
   ReadSensors();
   while (sensor[4] == 0 || sensor[3] == 0){
     ReadSensors();
@@ -330,6 +330,10 @@ void turnRight(){
   delay_ms (500);
 }
 void turnLeft () {
+  setPWM_leftmotor (230);
+  setPWM_rightmotor (120);
+  TurnLeft();
+  delay_ms(50);
   ReadSensors();
   while (sensor[0] == 0 || sensor[1] == 0){
     ReadSensors();
