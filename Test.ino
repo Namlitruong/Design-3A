@@ -142,7 +142,7 @@ void mqttPublish (){
   Serial.println ("Sending data");
   // Data
   //String Data = String(UID)+';'+String(v);
-  String Data = String(UID) + ";85"; 
+  String Data = String(UID) + String(Battery); 
   int length = Data.length();
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
