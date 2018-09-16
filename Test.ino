@@ -147,7 +147,7 @@ void mqttPublish (){
   char Buff[length];
   Data.toCharArray (Buff, length + 1);
   //Publish packet
-  client.publish( ClientID, Buff );
+  client.publish( ClientID, Buff, 1);
   return;
 } 
 //###############################################################
